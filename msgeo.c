@@ -25,7 +25,7 @@ DLLEXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 	strcpy(filterInitData->filterDesc, filter_name);
 
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
-	AddInLogMessageText("%s: %s", NOERROR, filter_name, "DSAPI Filter loaded (v0.0.25)");
+	AddInLogMessageText("%s: %s", NOERROR, filter_name, "DSAPI Filter loaded (v0.0.26)");
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "MFA extension: ON");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
