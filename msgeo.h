@@ -7,21 +7,21 @@
 #define DLLEXPORT  __declspec( dllexport ) // Macro to make our code more readable
 
 // Windows Header Files:
-#include <windows.h>
+// #include <windows.h>
 
 // TODO: reference additional headers your program requires here
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+// #include <stdlib.h>
+// #include <string.h>
+// #include <time.h>
 
 #include <global.h>
 #include <addin.h>
-#include <misc.h>
+//#include <misc.h>
 #include <dsapi.h>
 #include <nsfdb.h>
 #include <nsfnote.h>
 #include <nsfsearc.h>
 #include <osmem.h>
-#include <nsferr.h>
-#include <osmisc.h>
+// #include <nsferr.h>
+//#include <osmisc.h>
