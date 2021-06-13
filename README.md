@@ -1,6 +1,6 @@
 # TravelerDSAPI
 
-The DSAPI filter handles event kFilterAuthenticate. It detects if user who is about to authenticate already enabled MFA protection and if so make own password validation using PasswordSecret.
+The DSAPI filter handles event kFilterAuthenticate. It detects if user who is about to authenticate already enabled MFA protection and if so make own password validation using PasswordSecret. It's expected that database with name 2fa.nsf is located on the server in the root.
 
 ## How to compile project (DLL) for Windows using Visual Studio Code 2010.
 
