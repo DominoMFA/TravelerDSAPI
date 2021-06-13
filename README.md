@@ -2,7 +2,7 @@
 
 The DSAPI filter handles event kFilterAuthenticate. It detects if user who is about to authenticate already enabled MFA protection and if so make own password validation using PasswordSecret.
 
-# How to compile project (DLL) for Windows using Visual Studio Code 2010.
+## How to compile project (DLL) for Windows using Visual Studio Code 2010.
 
 Compiler command line used for the build
 
@@ -21,7 +21,7 @@ Linker command line used for the build:
 /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /PGD:"..\Projects\dsapistub1\x64\Release\dsapistub1.pgd" /LTCG /TLBID:1 /DYNAMICBASE /NXCOMPAT /MACHINE:X64 /ERRORREPORT:QUEUE 
 ```
 
-# How to compile project (SO) for Linux using gcc.
+## How to compile project (SO) for Linux using gcc.
 
 Compiler command line used for the build (that should produce a dsapistub1.o file)
 
