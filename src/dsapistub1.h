@@ -15,6 +15,9 @@
 
 #define MAX_BUF_LEN 512
 
+#define     ITEM_NAME_PASSWORD_SECRET	"PasswordSecret"
+#define     ITEM_NAME_MFA				"twoFA"
+
 // Constants for log level
 #ifndef CRITICAL_MSG
 #define CRITICAL_MSG 256
@@ -26,19 +29,12 @@
 #endif
 
 #include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 
 #include <global.h>
 #include <addin.h>
 #include <dsapi.h>
-
 #include <nsfdb.h>
-#include <nsfnote.h>
 #include <nsfsearc.h>
 #include <osmem.h>
-#include <nsferr.h>
 #include <osmisc.h>
-#include <misc.h>
-#include <bsafe.h>
 #include <lookup.h>

@@ -55,7 +55,7 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 	strcpy(filterInitData->filterDesc, filter_name);
 
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
-	AddInLogMessageText("%s: %s", NOERROR, filter_name, "DSAPI Filter loaded (v0.3.17)");
+	AddInLogMessageText("%s: %s", NOERROR, filter_name, "DSAPI Filter loaded (v0.4.6)");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
 
@@ -111,18 +111,13 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 		return kFilterNotHandled;
 	};
 
-#if defined SOLARIS || AIX || LINUX
-	user=(char*)authData->userName;
-#else
-	user=(char*)authData->userName;
-#endif
-
-	   /* Lookup the user in the Name and Address book.  Get
-       * the user's short name (which we expect is the OS
-       * user name), and get the user's fullname (which we
-       * expect will be in the format to pass back to
-       * dsapi).
-       */
+	/* Lookup the user in the Name and Address book.  Get
+	* the user's short name (which we expect is the OS
+	* user name), and get the user's fullname (which we
+	* expect will be in the format to pass back to
+	* dsapi).
+	*/
+	user = (char*)authData->userName;
 	if (NOERROR != getUserNames(context, user, &fullName, &fullNameLen, &httpPassword, &httpPasswordLen)) {
 		AddInLogMessageText("User not found in the Adress book\n", NOERROR);
 		return kFilterNotHandled;
@@ -135,32 +130,35 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	strcpy(password, (char *)authData->password);
 
 	if (NOERROR != getUserMFA(fullName)) {
-		AddInLogMessageText("User is not configured for multi-factor auth.\n", NOERROR);
+		AddInLogMessageText("We could not find information about user in 2fa.nsf .\n", NOERROR);
 		return kFilterNotHandled;
 	}
 
-	if (enable != NULL && strcmp("1", enable) == 0) {
-		AddInLogMessageText("Multi-factor auth. - enabled", NOERROR);
-		if (passwordSecretLen > 0) {
-			strcat(password, passwordSecret);
-		}		
+	if (enableLen == 0) {
+		AddInLogMessageText("User has not enabled multi-factor auth.\n", NOERROR);
+		return kFilterNotHandled;
 	}
+
+	AddInLogMessageText("Multi-factor auth. - enabled", NOERROR);
+	if (passwordSecretLen > 0) {
+		strcat(password, passwordSecret);
+	}		
 
 	AddInLogMessageText("Password: %s", NOERROR, password);
 
 	if (NOERROR == SECVerifyPassword((WORD) strlen(password), (BYTE*) password, (WORD)strlen(httpPassword), (BYTE*) httpPassword, 0, NULL)) {
-		AddInLogMessageText("Password pass. Return kFilterHandledEvent.\n", NOERROR);
+		AddInLogMessageText("Password pass.\n", NOERROR);
 
 		/* Copy the canonical name for this user that dsapi requires.  */
 		strncpy ((char *)authData->authName, fullName, fullNameLen);
 		authData->authType = kAuthenticBasic;
 		authData->foundInCache = TRUE;
+
 		return kFilterHandledEvent;
 	}
 
 	return kFilterNotHandled;
 }
-
 
 int getUserMFA (char *userName) {
 /*
@@ -213,9 +211,10 @@ int getUserMFA (char *userName) {
 }
 
 STATUS LNPUBLIC getUserPasswordSecret(void far *db_handle, SEARCH_MATCH far *pSearchMatch, ITEM_TABLE far *summary_info) {
-    SEARCH_MATCH SearchMatch;
-    NOTEHANDLE   note_handle;
-    STATUS       error;
+    SEARCH_MATCH	SearchMatch;
+    NOTEHANDLE		note_handle;
+    STATUS			error;
+	BOOL			field_found;
 
     memcpy( (char*)&SearchMatch, (char*)pSearchMatch, sizeof(SEARCH_MATCH) );
 
@@ -229,8 +228,17 @@ STATUS LNPUBLIC getUserPasswordSecret(void far *db_handle, SEARCH_MATCH far *pSe
 		return (ERR(error));
 	}
 
-	passwordSecretLen = NSFItemGetText(note_handle, "PasswordSecret", passwordSecret, (WORD) sizeof (passwordSecret));
-	enableLen = NSFItemGetText(note_handle, "twoFA", enable, (WORD) sizeof (enable));
+	/*  Look for the "PasswordSecret" field within this note. */
+    field_found = NSFItemIsPresent ( note_handle, ITEM_NAME_PASSWORD_SECRET, (WORD) strlen (ITEM_NAME_PASSWORD_SECRET));
+	if(field_found) {
+		passwordSecretLen = NSFItemGetText(note_handle, ITEM_NAME_PASSWORD_SECRET, passwordSecret, (WORD) sizeof (passwordSecret));
+	}
+
+	/*  Look for the "twoFA" field within this note. */
+    field_found = NSFItemIsPresent ( note_handle, ITEM_NAME_MFA, (WORD) strlen (ITEM_NAME_MFA));
+	if(field_found) {
+		enableLen = NSFItemGetText(note_handle, ITEM_NAME_MFA, enable, (WORD) sizeof (enable));
+	}
 
 	/* Close the note. */
 	if (error = NSFNoteClose (note_handle)) {
@@ -238,15 +246,12 @@ STATUS LNPUBLIC getUserPasswordSecret(void far *db_handle, SEARCH_MATCH far *pSe
 	}
 
 	/* End of subroutine. */
-    return (NOERROR);
+	return (NOERROR);
 }
 
-int getUserNames (FilterContext* context,
-                  char *userName,
-                  char **pUserFullName,
-                  int  *pUserFullNameLen,
-                  char **pHTTPPassword,
-                  int  *pHTTPPasswordLen) {
+int getUserNames(FilterContext* context, char *userName, 
+					char **pUserFullName, int  *pUserFullNameLen,
+					char **pHTTPPassword, int  *pHTTPPasswordLen) {
 /*
  * Description:  Lookup the user and return the user's full name and
  *               http password.
@@ -260,26 +265,25 @@ int getUserNames (FilterContext* context,
  *
  * Return: -1 on error, 0 on success
  */
-   STATUS   error = NOERROR;
-   DHANDLE    hLookup = NULLHANDLE;
-   DWORD   Matches = 0;
-   char   *pLookup;
-   char   *pName = NULL;
-   char   *pMatch = NULL;
-   int     rc = -1;
+	STATUS   error = NOERROR;
+	DHANDLE    hLookup = NULLHANDLE;
+	DWORD   Matches = 0;
+	char   *pLookup;
+	char   *pName = NULL;
+	char   *pMatch = NULL;
+	int     rc = -1;
 
-   char    string2[] = "full name=%s,length=%d\n";
-   char    string3[] = "http password=%s,length=%d\n";
+	char    string2[] = "full name=%s,length=%d\n";
+	char    string3[] = "http password=%s,length=%d\n";
 
-   /* Initialize output */
-   *pUserFullName = NULL;
-   *pUserFullNameLen = 0;
-   *pHTTPPassword = NULL;
-   *pHTTPPasswordLen = 0;
+	/* Initialize output */
+	*pUserFullName = NULL;
+	*pUserFullNameLen = 0;
+	*pHTTPPassword = NULL;
+	*pHTTPPasswordLen = 0;
 
-   /* do the name lookup
-    */
-   error = NAMELookup2(NULL, /* NULL means look locally */
+	/* do the name lookup */
+	error = NAMELookup2(NULL, /* NULL means look locally */
                            0,   /* flags */
                            1,   /* number of namespaces */
                            "$Users", /* namespace list */
@@ -291,70 +295,51 @@ int getUserNames (FilterContext* context,
                            &hLookup); /* place to receive handle of
                                        * return buffer */
 
-   if (error || (NULLHANDLE == hLookup))
-      goto NoUnlockExit;
+	if (error || (NULLHANDLE == hLookup))
+		goto NoUnlockExit;
 
-   pLookup = (char *) OSLockObject(hLookup);
+	pLookup = (char *) OSLockObject(hLookup);
 
-   /*   Get a pointer to our entry.
-    */
-   pName = (char *)NAMELocateNextName2(pLookup, /* name lookup
-                                                 * buffer */
-                                        NULL, /* start at beginning of
-                                               * lookup buffer */
-                                   &Matches); /* Receives number
-                                               * of times we
-                                               * found the entry
-                                               * (should be 1) */
+	/*   Get a pointer to our entry. */
+	pName = (char *)NAMELocateNextName2(pLookup, /* name lookup buffer */
+                                        NULL, /* start at beginning of lookup buffer */
+	                                   &Matches); /* Receives number of times we found the entry (should be 1) */
 
-   /* If we didn't find the entry, then quit */
-   if ((pName == NULL) || (Matches <= 0)) {
-      goto Exit;
-   }
+	/* If we didn't find the entry, then quit */
+	if ((pName == NULL) || (Matches <= 0)) {
+		goto Exit;
+	}
 
-   pMatch = (char *)NAMELocateNextMatch2(pLookup,  /* name lookup
-                                                    * buffer */
-                                         pName, /* entry that we found */
-                                         NULL); /* no previous match */
-   if (NULL == pMatch) {
-      goto Exit;
-   }
+	pMatch = (char *)NAMELocateNextMatch2(	pLookup,  /* name lookup buffer */
+											pName, /* entry that we found */
+											NULL); /* no previous match */
+	if (NULL == pMatch) {
+		goto Exit;
+	}
 
-   /* Get the full name from the info we got back */
-   if ( getLookupInfo (context,
-                            pMatch,
-                            0,
-                            pUserFullName,
-                            pUserFullNameLen) )
-      goto Exit;
+	/* Get the full name from the info we got back */
+	if ( getLookupInfo (context, pMatch, 0, pUserFullName, pUserFullNameLen) )
+		goto Exit;
 
-     AddInLogMessageText (string2, 0, *pUserFullName, *pUserFullNameLen);
+	AddInLogMessageText (string2, 0, *pUserFullName, *pUserFullNameLen);
 
-   /* Get the http password from the info we got back */
-   if ( getLookupInfo (context,
-                            pMatch,
-                            1,
-                            pHTTPPassword,
-                            pHTTPPasswordLen) )
-      goto Exit;
-   else
-      rc = 0;
+	/* Get the http password from the info we got back */
+	if ( getLookupInfo (context, pMatch, 1, pHTTPPassword, pHTTPPasswordLen) )
+		goto Exit;
+	else
+		rc = 0;
 
-   AddInLogMessageText (string3, 0,*pHTTPPassword,*pHTTPPasswordLen);
+	AddInLogMessageText (string3, 0,*pHTTPPassword,*pHTTPPasswordLen);
 Exit:
-   if ( pLookup && hLookup )
-      OSUnlock(hLookup);
+	if ( pLookup && hLookup )
+		OSUnlock(hLookup);
 NoUnlockExit:
-   if (NULLHANDLE != hLookup)
-      OSMemFree(hLookup);
-   return rc;
+	if (NULLHANDLE != hLookup)
+		OSMemFree(hLookup);
+	return rc;
 }
 
-int getLookupInfo (FilterContext* context,
-                   char *pMatch,
-                   unsigned short itemNumber,
-                   char **pInfo,
-                   int  *pInfoLen) {
+int getLookupInfo (FilterContext* context, char *pMatch, unsigned short itemNumber, char **pInfo, int  *pInfoLen) {
 /*
  * Description:  Get the info from the lookup buffer
  *
@@ -458,15 +443,13 @@ int writeToLog(int severity, const char *message) {
     FUNCTION:   PrintAPIError
     PURPOSE:    This function prints the Lotus C API for Domino and Notes error message associated with an error code.
 **************************************************************************/
-void PrintAPIError (STATUS api_error) {
+void PrintAPIError(STATUS api_error) {
     STATUS  string_id = ERR(api_error);
     char    error_text[200];
     WORD    text_len;
 
-    /* Get the message for this Lotus C API for Domino and Notes error code
-       from the resource string table. */
-    text_len = OSLoadString (NULLHANDLE, string_id, error_text,
-                             sizeof(error_text));
+    /* Get the message for this Lotus C API for Domino and Notes error code from the resource string table. */
+    text_len = OSLoadString(NULLHANDLE, string_id, error_text, sizeof(error_text));
 
     /* Print it. */
 	writeToLog(ERROR_MSG, error_text);
