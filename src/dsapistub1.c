@@ -63,7 +63,7 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 }	// end FilterInit
 
 EXPORT unsigned int TerminateFilter(unsigned int reserved) {
-	AddInLogMessageText("%s:", NOERROR, filter_name, "TerminateFilter");
+	AddInLogMessageText("%s: %s", NOERROR, filter_name, "TerminateFilter");
 	return kFilterHandledEvent;
 }	// end Terminate
 
@@ -174,7 +174,7 @@ int getUserMFA (char *userName) {
     WORD     wdc;
     STATUS   error = NOERROR;
 
-	sprintf(formula, "FullName=\"%s\"", userName);
+	sprintf(formula, "UserName=\"%s\"", userName);
 
 	//Open the database (prod version and if it does not exists - dev version)
     if (error = NSFDbOpen (db_mfa_filename, &db_handle)) {
