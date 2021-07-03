@@ -10,6 +10,9 @@ int getUserNames(FilterContext* context,
                   char **pHTTPPassword,
                   int  *ppHTTPPasswordLen);
 
+/* Log message if bDebug = TRUE */
+void logMessage(const char *message);
+
 /* Retrieval of name and HTTPPassword from Notes name and address book */
 int getUserMFA(char *userName);
 
@@ -34,7 +37,7 @@ int enableLen;
 int		iReportSeverity=DEBUG_MSG;		// set default logging to debug - the
 										// config setting will override if found
 
-int		bLog=TRUE;						// for debugging it can help to issue printf
+int		bLog=FALSE;						// for debugging it can help to issue printf
 										// statements instead of logging to the Domino
 										// log as time delays can occurr making it 
 										// hard to follow the order of events. To use printf
@@ -53,10 +56,12 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 	filterInitData->appFilterVersion = kInterfaceVersion;
 	filterInitData->eventFlags = kFilterAuthenticate;
 	strcpy(filterInitData->filterDesc, filter_name);
+	bLog = OSGetEnvironmentLong("mfa_debug");
 
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
-	AddInLogMessageText("%s: %s", NOERROR, filter_name, "DSAPI Filter loaded (v0.4.6)");
+	AddInLogMessageText("%s: %s", NOERROR, filter_name, "DSAPI Filter loaded (v0.5.1)");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
+	AddInLogMessageText("%s: mfa_debug: %u", NOERROR, filter_name, bLog);
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
 
 	return kFilterHandledRequest;
@@ -91,23 +96,23 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	char *domain = NULL;
 	char password[64];
 
-	AddInLogMessageText("Authenticate started", NOERROR);
+	logMessage("Authenticate started");
 
 	// If the user is found in the cache, then we don't need to do anything further.
 	if (!authData || authData->foundInCache) {
-		AddInLogMessageText("User is found in the cache", NOERROR);
+		logMessage("User is found in the cache");
 		return kFilterNotHandled;
 	};
 
 	// Verify if username and password are available.
 	if (!authData->userName || !authData->password) {
-		AddInLogMessageText("User/Password are not provided", NOERROR);
+		logMessage("User/Password are not provided");
 		return kFilterNotHandled;
 	};
 
 	// Not a web user
 	if( !(authData->authFlags & (kAuthAllowAnonymous | kAuthAllowSSLAnonymous | kAuthAllowBasic | kAuthAllowSSLBasic)) ) {
-		AddInLogMessageText("Not a web user", NOERROR);
+		logMessage("Not a web user");
 		return kFilterNotHandled;
 	};
 
@@ -119,7 +124,7 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	*/
 	user = (char*)authData->userName;
 	if (NOERROR != getUserNames(context, user, &fullName, &fullNameLen, &httpPassword, &httpPasswordLen)) {
-		AddInLogMessageText("User not found in the Adress book\n", NOERROR);
+		logMessage("User not found in the Adress book\n");
 		return kFilterNotHandled;
 	}
 
@@ -130,24 +135,26 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	strcpy(password, (char *)authData->password);
 
 	if (NOERROR != getUserMFA(fullName)) {
-		AddInLogMessageText("We could not find information about user in 2fa.nsf .\n", NOERROR);
+		logMessage("We could not find information about user in 2fa.nsf .\n");
 		return kFilterNotHandled;
 	}
 
 	if (enableLen == 0) {
-		AddInLogMessageText("User has not enabled multi-factor auth.\n", NOERROR);
+		logMessage("User has not enabled multi-factor auth.\n");
 		return kFilterNotHandled;
 	}
 
-	AddInLogMessageText("Multi-factor auth. - enabled", NOERROR);
+	logMessage("Multi-factor auth. - enabled");
 	if (passwordSecretLen > 0) {
 		strcat(password, passwordSecret);
 	}		
 
-	AddInLogMessageText("Password: %s", NOERROR, password);
+	if (bLog==TRUE) {
+		AddInLogMessageText("Password: %s", NOERROR, password);
+	}
 
 	if (NOERROR == SECVerifyPassword((WORD) strlen(password), (BYTE*) password, (WORD)strlen(httpPassword), (BYTE*) httpPassword, 0, NULL)) {
-		AddInLogMessageText("Password pass.\n", NOERROR);
+		logMessage("Password pass.\n");
 
 		/* Copy the canonical name for this user that dsapi requires.  */
 		strncpy ((char *)authData->authName, fullName, fullNameLen);
@@ -235,7 +242,7 @@ STATUS LNPUBLIC getUserPasswordSecret(void far *db_handle, SEARCH_MATCH far *pSe
 	}
 
 	/*  Look for the "twoFA" field within this note. */
-    field_found = NSFItemIsPresent ( note_handle, ITEM_NAME_MFA, (WORD) strlen (ITEM_NAME_MFA));
+    field_found = NSFItemIsPresent( note_handle, ITEM_NAME_MFA, (WORD) strlen (ITEM_NAME_MFA));
 	if(field_found) {
 		enableLen = NSFItemGetText(note_handle, ITEM_NAME_MFA, enable, (WORD) sizeof (enable));
 	}
@@ -318,10 +325,12 @@ int getUserNames(FilterContext* context, char *userName,
 	}
 
 	/* Get the full name from the info we got back */
-	if ( getLookupInfo (context, pMatch, 0, pUserFullName, pUserFullNameLen) )
+	if (getLookupInfo(context, pMatch, 0, pUserFullName, pUserFullNameLen) )
 		goto Exit;
 
-	AddInLogMessageText (string2, 0, *pUserFullName, *pUserFullNameLen);
+	if (bLog==TRUE) {
+		AddInLogMessageText(string2, 0, *pUserFullName, *pUserFullNameLen);
+	}
 
 	/* Get the http password from the info we got back */
 	if ( getLookupInfo (context, pMatch, 1, pHTTPPassword, pHTTPPasswordLen) )
@@ -329,7 +338,9 @@ int getUserNames(FilterContext* context, char *userName,
 	else
 		rc = 0;
 
-	AddInLogMessageText (string3, 0,*pHTTPPassword,*pHTTPPasswordLen);
+	if (bLog==TRUE) {
+		AddInLogMessageText(string3, 0,*pHTTPPassword,*pHTTPPasswordLen);
+	}
 Exit:
 	if ( pLookup && hLookup )
 		OSUnlock(hLookup);
@@ -339,7 +350,7 @@ NoUnlockExit:
 	return rc;
 }
 
-int getLookupInfo (FilterContext* context, char *pMatch, unsigned short itemNumber, char **pInfo, int  *pInfoLen) {
+int getLookupInfo(FilterContext* context, char *pMatch, unsigned short itemNumber, char **pInfo, int  *pInfoLen) {
 /*
  * Description:  Get the info from the lookup buffer
  *
@@ -412,6 +423,11 @@ int getLookupInfo (FilterContext* context, char *pMatch, unsigned short itemNumb
    }
 
    return -1;
+}
+
+void logMessage(const char *message) {
+	if (bLog!=TRUE) return;
+	AddInLogMessageText("%s: %s", NOERROR, filter_name, message);
 }
 
 /* 

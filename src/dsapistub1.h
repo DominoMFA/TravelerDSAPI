@@ -38,3 +38,4 @@
 #include <osmem.h>
 #include <osmisc.h>
 #include <lookup.h>
+#include <osenv.h>
