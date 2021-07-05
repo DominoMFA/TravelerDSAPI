@@ -27,7 +27,7 @@ int getLookupInfo(FilterContext* context,
 void			PrintAPIError (STATUS api_error);
 
 char*	filter_name = "DominoMFA (Traveler)";			// filter name
-char*	db_mfa_filename = "2fa.nsf";
+char*	db_mfa_filename = "mfa.nsf";
 char passwordSecret[128];
 int passwordSecretLen;
 char enable[8];
