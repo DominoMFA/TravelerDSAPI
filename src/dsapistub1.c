@@ -61,6 +61,7 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "DSAPI Filter loaded (v0.5.1)");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
+	AddInLogMessageText("%s: mfa: %s", NOERROR, filter_name, db_mfa_filename);
 	AddInLogMessageText("%s: mfa_debug: %u", NOERROR, filter_name, bLog);
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
 
