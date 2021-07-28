@@ -11,7 +11,10 @@ int getUserNames(FilterContext* context,
                   int  *ppHTTPPasswordLen);
 
 /* Log message if bDebug = TRUE */
-void logMessage(const char *message);
+void logMessage(int flag, const char *message);
+
+/* check if mfa.nsf exists */
+int loadMFA();
 
 /* Retrieval of name and HTTPPassword from Notes name and address book */
 int getUserMFA(char *userName);
@@ -34,14 +37,7 @@ char enable[8];
 int enableLen;
 
 
-int		iReportSeverity=DEBUG_MSG;		// set default logging to debug - the
-										// config setting will override if found
-
-int		bLog=FALSE;						// for debugging it can help to issue printf
-										// statements instead of logging to the Domino
-										// log as time delays can occurr making it 
-										// hard to follow the order of events. To use printf
-										// set bLog=FALSE
+int		bLog=FALSE;						// print debug information to console
 
 /* Notes SDK shared library entrypoint */
 EXPORT int MainEntryPoint(void);
@@ -58,18 +54,26 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 	strcpy(filterInitData->filterDesc, filter_name);
 	bLog = OSGetEnvironmentLong("mfa_debug");
 
-	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
-	AddInLogMessageText("%s: %s", NOERROR, filter_name, "DSAPI Filter loaded (v0.5.1)");
+	logMessage(TRUE, "--------------------------------");
+	logMessage(TRUE, "DSAPI Filter loaded (v0.5.4)");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
-	AddInLogMessageText("%s: mfa: %s", NOERROR, filter_name, db_mfa_filename);
-	AddInLogMessageText("%s: mfa_debug: %u", NOERROR, filter_name, bLog);
-	AddInLogMessageText("%s: %s", NOERROR, filter_name, "--------------------------------");
+	AddInLogMessageText("%s: db: %s", NOERROR, filter_name, db_mfa_filename);
+	AddInLogMessageText("%s: debug: %u", NOERROR, filter_name, bLog);
+	logMessage(TRUE, "--------------------------------");
+
+	if (NOERROR != loadMFA()) {
+		//Return an error so that the filter will not be called for any events
+		logMessage(TRUE, "Error: Unable to find/open mfa.nsf configuration databases.");
+		logMessage(TRUE, "The filter will not process any requests.");
+		logMessage(TRUE, "--------------------------------");
+		return kFilterError;
+	}
 
 	return kFilterHandledRequest;
 }	// end FilterInit
 
 EXPORT unsigned int TerminateFilter(unsigned int reserved) {
-	AddInLogMessageText("%s: %s", NOERROR, filter_name, "TerminateFilter");
+	logMessage(TRUE, "TerminateFilter");
 	return kFilterHandledEvent;
 }	// end Terminate
 
@@ -97,23 +101,23 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	char *domain = NULL;
 	char password[64];
 
-	logMessage("Authenticate started");
+	logMessage(bLog, "Authenticate started");
 
 	// If the user is found in the cache, then we don't need to do anything further.
 	if (!authData || authData->foundInCache) {
-		logMessage("User is found in the cache");
+		logMessage(bLog, "User is found in the cache");
 		return kFilterNotHandled;
 	};
 
 	// Verify if username and password are available.
 	if (!authData->userName || !authData->password) {
-		logMessage("User/Password are not provided");
+		logMessage(bLog, "User/Password are not provided");
 		return kFilterNotHandled;
 	};
 
 	// Not a web user
 	if( !(authData->authFlags & (kAuthAllowAnonymous | kAuthAllowSSLAnonymous | kAuthAllowBasic | kAuthAllowSSLBasic)) ) {
-		logMessage("Not a web user");
+		logMessage(bLog, "Not a web user");
 		return kFilterNotHandled;
 	};
 
@@ -125,7 +129,7 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	*/
 	user = (char*)authData->userName;
 	if (NOERROR != getUserNames(context, user, &fullName, &fullNameLen, &httpPassword, &httpPasswordLen)) {
-		logMessage("User not found in the Adress book\n");
+		logMessage(bLog, "User not found in the Adress book\n");
 		return kFilterNotHandled;
 	}
 
@@ -136,16 +140,16 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	strcpy(password, (char *)authData->password);
 
 	if (NOERROR != getUserMFA(fullName)) {
-		logMessage("We could not find information about user in 2fa.nsf .\n");
+		logMessage(bLog, "We could not find information about user in mfa.nsf .\n");
 		return kFilterNotHandled;
 	}
 
 	if (enableLen == 0) {
-		logMessage("User has not enabled multi-factor auth.\n");
+		logMessage(bLog, "User has not enabled multi-factor auth.\n");
 		return kFilterNotHandled;
 	}
 
-	logMessage("Multi-factor auth. - enabled");
+	logMessage(bLog, "Multi-factor auth. - enabled");
 	if (passwordSecretLen > 0) {
 		strcat(password, passwordSecret);
 	}		
@@ -155,7 +159,7 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	}
 
 	if (NOERROR == SECVerifyPassword((WORD) strlen(password), (BYTE*) password, (WORD)strlen(httpPassword), (BYTE*) httpPassword, 0, NULL)) {
-		logMessage("Password pass.\n");
+		logMessage(bLog, "Password pass.\n");
 
 		/* Copy the canonical name for this user that dsapi requires.  */
 		strncpy ((char *)authData->authName, fullName, fullNameLen);
@@ -168,7 +172,32 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	return kFilterNotHandled;
 }
 
-int getUserMFA (char *userName) {
+int loadMFA() {
+/*
+ * Description:  Check if MFA.nsf can be opened
+ *
+ * Return: -1 on error, 0 on success
+ */
+
+	DBHANDLE    db_handle; 
+    STATUS   error = NOERROR;
+
+	//Open MFA database
+    if (error = NSFDbOpen(db_mfa_filename, &db_handle)) {
+		PrintAPIError(error);
+		return (1);
+	}
+
+	// Close the db
+    if (error = NSFDbClose(db_handle)) {
+        PrintAPIError(error);
+        return (1);
+    } 
+
+	return (0);
+}
+
+int getUserMFA(char *userName) {
 /*
  * Description:  Lookup the user in MFA.nsf and return the user's secret and MFA status
  *
@@ -184,10 +213,10 @@ int getUserMFA (char *userName) {
 
 	sprintf(formula, "UserName=\"%s\"", userName);
 
-	//Open the database (prod version and if it does not exists - dev version)
-    if (error = NSFDbOpen (db_mfa_filename, &db_handle)) {
-		PrintAPIError (error);
-		return (1);
+	//Open MFA database
+    if (error = NSFDbOpen(db_mfa_filename, &db_handle)) {
+		PrintAPIError(error);
+		return(1);
 	}
     
     //Create a selection formula to read just the configuration document
@@ -212,9 +241,10 @@ int getUserMFA (char *userName) {
 
 	// Close the db
     if (error = NSFDbClose (db_handle)) {
-        PrintAPIError (error);  
+        PrintAPIError(error);
         return (1);
     } 
+
 	return (0);
 }
 
@@ -242,7 +272,7 @@ STATUS LNPUBLIC getUserPasswordSecret(void far *db_handle, SEARCH_MATCH far *pSe
 		passwordSecretLen = NSFItemGetText(note_handle, ITEM_NAME_PASSWORD_SECRET, passwordSecret, (WORD) sizeof (passwordSecret));
 	}
 
-	/*  Look for the "twoFA" field within this note. */
+	/*  Look for the "MFA" field within this note. */
     field_found = NSFItemIsPresent( note_handle, ITEM_NAME_MFA, (WORD) strlen (ITEM_NAME_MFA));
 	if(field_found) {
 		enableLen = NSFItemGetText(note_handle, ITEM_NAME_MFA, enable, (WORD) sizeof (enable));
@@ -426,34 +456,9 @@ int getLookupInfo(FilterContext* context, char *pMatch, unsigned short itemNumbe
    return -1;
 }
 
-void logMessage(const char *message) {
-	if (bLog!=TRUE) return;
+void logMessage(int flag, const char *message) {
+	if (flag!=TRUE) return;
 	AddInLogMessageText("%s: %s", NOERROR, filter_name, message);
-}
-
-/* 
- * Function: writeToLog
- * Description: writes output to the Domino log and console.
- * If bLog is set to FALSE, then output is only written to the console.
- * This can help with debugging, as there are no delays in the console output
- * if the log is bypassed.
- * Messages are only output if the severity of the message is higher than the 
- * threshold set in iReportSeverity.
- */
-int writeToLog(int severity, const char *message) {
-	if (severity < iReportSeverity) {
-		return NOERROR;
-	}
-
-	if (filter_name && *message) {
-		if (bLog==TRUE) {
-			AddInLogMessageText("%s: %s", NOERROR, filter_name, message);
-		} else {
-			printf("%s: %s\n", filter_name, message);
-		}
-	}
-
-	return NOERROR;
 }
 
 /*************************************************************************
@@ -469,5 +474,5 @@ void PrintAPIError(STATUS api_error) {
     text_len = OSLoadString(NULLHANDLE, string_id, error_text, sizeof(error_text));
 
     /* Print it. */
-	writeToLog(ERROR_MSG, error_text);
+	logMessage(TRUE, error_text);
 }

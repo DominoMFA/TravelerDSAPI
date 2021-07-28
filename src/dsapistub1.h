@@ -16,7 +16,7 @@
 #define MAX_BUF_LEN 512
 
 #define     ITEM_NAME_PASSWORD_SECRET	"PasswordSecret"
-#define     ITEM_NAME_MFA				"twoFA"
+#define     ITEM_NAME_MFA				"MFA"
 
 // Constants for log level
 #ifndef CRITICAL_MSG
