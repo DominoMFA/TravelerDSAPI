@@ -16,9 +16,12 @@ jobs:
     - name: 1. check if GCC is installed
       run: |
         pwd
+        echo "wget"
+        sudo apt-get install wget
+        wget --version
         echo "gcc --version"
         gcc --version
-        curl https://domino-1.dmytro.cloud/jar.nsf/0/file/$FILE/libnotes.so
+        wget 'https://domino-1.dmytro.cloud/jar.nsf/0/file/$FILE/libnotes.so'
     - name: 2. build dsapistub1.o
       run: |
         echo "- creating dsapistub1.o";
