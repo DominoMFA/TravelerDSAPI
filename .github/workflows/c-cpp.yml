@@ -13,10 +13,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: 1. install GPP (c compiler)
+    - name: 1. install GCC (c compiler)
       run: |
-        echo "sudo apt-get install -y gpp"
-        sudo apt-get install -y gpp
+        echo "installing gcc"
+        sudo apt install build-essential
         echo "done"
 
     - name: 2. build dsapistub1.o
