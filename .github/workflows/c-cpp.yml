@@ -16,12 +16,12 @@ jobs:
     - name: 1. check if GCC is installed
       run: |
         pwd
-        echo "wget"
-        sudo apt-get install wget
+        echo "wget --version"
         wget --version
         echo "gcc --version"
         gcc --version
-        wget 'https://domino-1.dmytro.cloud/jar.nsf/0/file/$FILE/libnotes.so'
+        echo "wget libnotes.so"
+        wget 'https://domino-1.dmytro.cloud/jar.nsf/0/file/$FILE/libnotes.so' -q --show-progress
     - name: 2. build dsapistub1.o
       run: |
         echo "- creating dsapistub1.o";
@@ -34,3 +34,11 @@ jobs:
         gcc -m64 -DGCC3 -DGCC4 "libnotes.so" -fno-strict-aliasing -DGCC_LBLB_NOT_SUPPORTED -Wformat -Wall -Wcast-align -Wconversion -shared -fPIC -Wl,-Bsymbolic,--whole-archive,-znodefs,-ztext -Wl,--no-whole-archive -Lnotesapi/lib/linux64 -L/lib64 -ldl -lrt -lm -lstdc++ -lpthread -lc -lresolv -lc dsapistub1.o -o libdsapistub1.so
         ls -la
         echo "- done";
+    - name: 4. Notify Domino server about new build
+      uses: fjogeleit/http-request-action@master
+      with:
+        url: 'https://domino-1.dmytro.cloud/ping.nsf/ping?openagent'
+        method: 'POST'
+        contentType: application/x-www-form-urlencoded
+        data: '{"run-id": "${{github.run_id}}", "pid":"travelerDSAPI"}'
+        preventFailureOnNoResponse: 'true'
