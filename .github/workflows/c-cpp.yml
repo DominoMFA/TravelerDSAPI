@@ -13,14 +13,12 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: 1. check if GCC is installed
+    - name: 1. prepare environment
       run: |
+        echo "- check wget, gcc and download libnotes.so";
         pwd
-        echo "wget --version"
         wget --version
-        echo "gcc --version"
         gcc --version
-        echo "wget libnotes.so"
         wget 'https://domino-1.dmytro.cloud/jar.nsf/0/file/$FILE/libnotes.so' -q --show-progress
     - name: 2. build dsapistub1.o
       run: |
