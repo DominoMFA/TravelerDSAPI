@@ -18,6 +18,7 @@ jobs:
         echo "gcc --version"
         gcc --version
         pwd
+        ls -la
     - name: 2. build dsapistub1.o
       run: |
         echo "- creating dsapistub1.o";
