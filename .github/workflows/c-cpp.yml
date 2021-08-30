@@ -36,7 +36,7 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: libdsapistub1
-        path: target/
+        path: libdsapistub1.so
         retention-days: 1
         if-no-files-found: error
     - name: 5. Run deploy on Domino server
