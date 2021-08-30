@@ -32,11 +32,18 @@ jobs:
         gcc -m64 -DGCC3 -DGCC4 "libnotes.so" -fno-strict-aliasing -DGCC_LBLB_NOT_SUPPORTED -Wformat -Wall -Wcast-align -Wconversion -shared -fPIC -Wl,-Bsymbolic,--whole-archive,-znodefs,-ztext -Wl,--no-whole-archive -Lnotesapi/lib/linux64 -L/lib64 -ldl -lrt -lm -lstdc++ -lpthread -lc -lresolv -lc dsapistub1.o -o libdsapistub1.so
         ls -la
         echo "- done";
-    - name: 4. Notify Domino server about new build
+    - name: 4. Store artifact in GitHub
+      uses: actions/upload-artifact@v2
+      with:
+        name: libdsapistub1
+        path: target/
+        retention-days: 1
+        if-no-files-found: error
+    - name: 5. Run deploy on Domino server
       uses: fjogeleit/http-request-action@master
       with:
-        url: 'https://domino-1.dmytro.cloud/ping.nsf/ping?openagent'
+        url: 'https://domino-1.dmytro.cloud/DeployGitHub.nsf/start?openagent'
         method: 'POST'
         contentType: application/x-www-form-urlencoded
-        data: '{"run-id": "${{github.run_id}}", "pid":"travelerDSAPI"}'
+        data: '{"run-id": "${{github.run_id}}", "repo": "${{github.repository}}"}'
         preventFailureOnNoResponse: 'true'
