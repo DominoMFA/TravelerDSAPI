@@ -19,7 +19,7 @@ jobs:
         pwd
         wget --version
         gcc --version
-        wget 'https://domino-1.dmytro.cloud/files.nsf/get?openagent&file=libnotes.so' -q --show-progress
+        wget 'https://domino-1.dmytro.cloud/files.nsf/get?openagent&file=libnotes.so' -O libnotes.so -q --show-progress
     - name: 2. build dsapistub1.o
       run: |
         echo "- creating dsapistub1.o";
