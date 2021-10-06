@@ -43,3 +43,8 @@ gcc -m64 -DGCC3 -DGCC4 "$LOTUS/notes/latest/linux/libnotes.so" -fno-strict-alias
 *NOTE (for Linux)*
 1. $LOTUS is an alias for executive directory of lotus notes (i.e. $LOTUS = /opt/lotus)
 2. for Linux OS the final SO file should always start with LIB prefix, otherwise it will not work.
+
+*debug mode*
+
+add variable to notes.ini to enable log mode
+mfa_debug = 1 
