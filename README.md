@@ -63,4 +63,4 @@ mfa_debug = 1
 
 ## How to get latest version of DSAPI Filter
 
-- the latest releases are part of repository and can be found in the releases section.
+- the latest releases are part of repository and can be found in the releases section: https://github.com/DominoMFA/TravelerDSAPI/releases/
