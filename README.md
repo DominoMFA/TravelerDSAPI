@@ -48,3 +48,19 @@ gcc -m64 -DGCC3 -DGCC4 "$LOTUS/notes/latest/linux/libnotes.so" -fno-strict-alias
 
 add variable to notes.ini to enable log mode
 mfa_debug = 1 
+
+## How to load DSAPI Filter
+
+- make sure MFA.nsf is configured on a Domino server (dsapi filter won't load without it).
+- place your DSAPI filter under the Domino executive folder.
+- register your DSAPI filter in a server document (or internet website document)
+
+![image](https://user-images.githubusercontent.com/844872/137787313-50ac1507-e5bb-4211-90c6-93c277a586ba.png)
+
+- restart HTTP (see a succesful DSAPI load below)
+
+![image](https://user-images.githubusercontent.com/844872/137787796-e4735b74-75e2-4ed7-86bb-320d81eea6b6.png)
+
+## How to get latest version of DSAPI Filter
+
+- the latest releases are part of repository and can be found in the releases section.
