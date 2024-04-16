@@ -31,13 +31,13 @@ void			PrintAPIError (STATUS api_error);
 
 char*	filter_name = "DominoMFA (Traveler)";			// filter name
 char*	db_mfa_filename = "mfa.nsf";
-char passwordSecret[128];
+char passwordSecret[128] = {0};
 int passwordSecretLen;
-char enable[8];
+char enable[8] = {0};
 int enableLen;
 
 
-int		bLog=FALSE;						// print debug information to console
+int	bLog=FALSE;						// print debug information to console
 
 /* Notes SDK shared library entrypoint */
 EXPORT int MainEntryPoint(void);
@@ -47,15 +47,16 @@ EXPORT int MainEntryPoint(void) {
 }
 
 EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
-	STATUS   error = NOERROR;
+	STATUS error = NOERROR;
 
 	filterInitData->appFilterVersion = kInterfaceVersion;
 	filterInitData->eventFlags = kFilterAuthenticate;
-	strcpy(filterInitData->filterDesc, filter_name);
+	strncpy(filterInitData->filterDesc, filter_name, sizeof(filterInitData->filterDesc) - 1);
+	filterInitData->filterDesc[sizeof(filterInitData->filterDesc) - 1] = '\0';  // Ensure null-termination
 	bLog = OSGetEnvironmentLong("mfa_debug");
 
 	logMessage(TRUE, "--------------------------------");
-	logMessage(TRUE, "DSAPI Filter loaded (v0.5.4)");
+	logMessage(TRUE, "DSAPI Filter loaded (v0.5.5)");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
 	AddInLogMessageText("%s: db: %s", NOERROR, filter_name, db_mfa_filename);
 	AddInLogMessageText("%s: debug: %u", NOERROR, filter_name, bLog);
@@ -429,9 +430,7 @@ int getLookupInfo(FilterContext* context, char *pMatch, unsigned short itemNumbe
          return -1;
    }
 
-   /* Allocate space for the info.  This memory will be freed
-    * automatically when the thread terminates.
-    */
+   /* Allocate space for the info.  This memory will be freed automatically when the thread terminates. */
    newSpace = (context->AllocMem)(context, ValueLength+1, reserved, &errID);
    *pInfo = (char *) newSpace;
    if (NULL == *pInfo) {
@@ -441,13 +440,10 @@ int getLookupInfo(FilterContext* context, char *pMatch, unsigned short itemNumbe
 
    /* Get the info */
    error = NAMEGetTextItem2(pMatch, /* match that we found */
-                                itemNumber, /* item # in order of item
-                                             * on lookup */
-                                0,      /* Member # of item in text
-                                         * lists */
-                                *pInfo, /* buffer to copy result
-                                         * into */
-                                MAX_BUF_LEN);   /* Length of buffer */
+                            itemNumber, /* item # in order of on lookup */
+                            0,      /* Member # of item in text lists */
+                            *pInfo, /* buffer to copy result into */
+                            MAX_BUF_LEN);   /* Length of buffer */
    if (!error) {
       *pInfoLen = strlen(*pInfo)+1;
       return 0;
@@ -470,9 +466,18 @@ void PrintAPIError(STATUS api_error) {
     char    error_text[200];
     WORD    text_len;
 
+    /* Initialize error_text buffer */
+    memset(error_text, 0, sizeof(error_text));
+
     /* Get the message for this Lotus C API for Domino and Notes error code from the resource string table. */
-    text_len = OSLoadString(NULLHANDLE, string_id, error_text, sizeof(error_text));
+    text_len = OSLoadString(NULLHANDLE, string_id, error_text, sizeof(error_text) - 1);  // Subtract 1 to leave space for null terminator
+
+    /* Check if OSLoadString succeeded */
+    if (text_len == 0) {
+        logMessage(TRUE, "Error: Failed to load error message.");
+        return;
+    }
 
     /* Print it. */
-	logMessage(TRUE, error_text);
+    logMessage(TRUE, error_text);
 }
