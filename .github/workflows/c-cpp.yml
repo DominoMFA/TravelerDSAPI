@@ -33,7 +33,7 @@ jobs:
         ls -la
         echo "- done";
     - name: 4. Store artifact in GitHub
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: libdsapistub1
         path: libdsapistub1.so

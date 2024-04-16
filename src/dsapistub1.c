@@ -29,13 +29,12 @@ int getLookupInfo(FilterContext* context,
 
 void			PrintAPIError (STATUS api_error);
 
-char*	filter_name = "DominoMFA (Traveler)";			// filter name
+char*	filter_name = "MFA for Domino (Traveler)";			// filter name
 char*	db_mfa_filename = "mfa.nsf";
 char passwordSecret[128] = {0};
 int passwordSecretLen;
 char enable[8] = {0};
 int enableLen;
-
 
 int	bLog=FALSE;						// print debug information to console
 
@@ -100,7 +99,11 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	int httpPasswordLen = 0;
 	char *user = NULL;
 	char *domain = NULL;
-	char password[64];
+	char password[128] = {0};
+	*passwordSecret = NULL;
+	passwordSecretLen = 0;
+	*enable = NULL;
+	enableLen = 0;
 
 	logMessage(bLog, "Authenticate started");
 
@@ -122,11 +125,8 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 		return kFilterNotHandled;
 	};
 
-	/* Lookup the user in the Name and Address book.  Get
-	* the user's short name (which we expect is the OS
-	* user name), and get the user's fullname (which we
-	* expect will be in the format to pass back to
-	* dsapi).
+	/* Lookup the user in the Name and Address book.  Get the user's short name (which we expect is the OS user name),
+	* and get the user's fullname (which we expect will be in the format to pass back to dsapi).
 	*/
 	user = (char*)authData->userName;
 	if (NOERROR != getUserNames(context, user, &fullName, &fullNameLen, &httpPassword, &httpPasswordLen)) {
@@ -134,11 +134,8 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 		return kFilterNotHandled;
 	}
 
-	*passwordSecret = NULL;
-	passwordSecretLen = 0;
-	*enable = NULL;
-	enableLen = 0;
-	strcpy(password, (char *)authData->password);
+	strncpy(password, (char *)authData->password, sizeof(password) - 1);
+	password[sizeof(password) - 1] = '\0';  // Ensure null-termination
 
 	if (NOERROR != getUserMFA(fullName)) {
 		logMessage(bLog, "We could not find information about user in mfa.nsf .\n");
@@ -180,22 +177,22 @@ int loadMFA() {
  * Return: -1 on error, 0 on success
  */
 
-	DBHANDLE    db_handle; 
-    STATUS   error = NOERROR;
+	DBHANDLE	db_handle = NULLHANDLE; 
+    STATUS		error = NOERROR;
 
 	//Open MFA database
     if (error = NSFDbOpen(db_mfa_filename, &db_handle)) {
 		PrintAPIError(error);
-		return (1);
+		return 1;
 	}
 
 	// Close the db
     if (error = NSFDbClose(db_handle)) {
         PrintAPIError(error);
-        return (1);
+        return 1;
     } 
 
-	return (0);
+	return NOERROR;
 }
 
 int getUserMFA(char *userName) {
@@ -206,10 +203,10 @@ int getUserMFA(char *userName) {
  *
  * Return: -1 on error, 0 on success
  */
-    DBHANDLE    db_handle; 
+    DBHANDLE    db_handle = NULLHANDLE;
 	char        formula[128]; 
-    FORMULAHANDLE    formula_handle;
-    WORD     wdc;
+    FORMULAHANDLE    formula_handle = NULLHANDLE;
+    WORD     wdc = 0;
     STATUS   error = NOERROR;
 
 	sprintf(formula, "UserName=\"%s\"", userName);
@@ -224,17 +221,17 @@ int getUserMFA(char *userName) {
     if (error = NSFFormulaCompile (NULL, (WORD) 0, formula, 
 									(WORD) strlen(formula), &formula_handle,
 									&wdc, &wdc, &wdc, &wdc, &wdc, &wdc)) {
-        NSFDbClose (db_handle);
-        PrintAPIError (error);  
-        return (1);
+        NSFDbClose(db_handle);
+        PrintAPIError(error);  
+        return 1;
     }
 
 	//Perform the search...
     if (error = NSFSearch(db_handle, formula_handle, NULL, 0,
                 NOTE_CLASS_DOCUMENT, NULL, getUserPasswordSecret, &db_handle, NULL)) {
         NSFDbClose(db_handle);
-        PrintAPIError (error);  
-        return (1);
+        PrintAPIError(error);  
+        return 1;
     }
 
 	//Free the memory
@@ -243,16 +240,16 @@ int getUserMFA(char *userName) {
 	// Close the db
     if (error = NSFDbClose (db_handle)) {
         PrintAPIError(error);
-        return (1);
+        return 1;
     } 
 
-	return (0);
+	return NOERROR;
 }
 
 STATUS LNPUBLIC getUserPasswordSecret(void far *db_handle, SEARCH_MATCH far *pSearchMatch, ITEM_TABLE far *summary_info) {
     SEARCH_MATCH	SearchMatch;
     NOTEHANDLE		note_handle;
-    STATUS			error;
+    STATUS			error = NOERROR;
 	BOOL			field_found;
 
     memcpy( (char*)&SearchMatch, (char*)pSearchMatch, sizeof(SEARCH_MATCH) );
@@ -304,9 +301,9 @@ int getUserNames(FilterContext* context, char *userName,
  *
  * Return: -1 on error, 0 on success
  */
-	STATUS   error = NOERROR;
-	DHANDLE    hLookup = NULLHANDLE;
-	DWORD   Matches = 0;
+	STATUS	error = NOERROR;
+	DHANDLE	hLookup = NULLHANDLE;
+	DWORD	Matches = 0;
 	char   *pLookup;
 	char   *pName = NULL;
 	char   *pMatch = NULL;
@@ -329,10 +326,8 @@ int getUserNames(FilterContext* context, char *userName,
                            1,   /* number of names to lookup */
                            userName, /* list of names to lookup */
                            2, /* number of items to return */
-                           "FullName\0HTTPPassword", /* list of items to
-                                                   * return */
-                           &hLookup); /* place to receive handle of
-                                       * return buffer */
+                           "FullName\0HTTPPassword", /* list of items to return */
+                           &hLookup); /* place to receive handle of return buffer */
 
 	if (error || (NULLHANDLE == hLookup))
 		goto NoUnlockExit;
@@ -365,7 +360,7 @@ int getUserNames(FilterContext* context, char *userName,
 	}
 
 	/* Get the http password from the info we got back */
-	if ( getLookupInfo (context, pMatch, 1, pHTTPPassword, pHTTPPasswordLen) )
+	if ( getLookupInfo(context, pMatch, 1, pHTTPPassword, pHTTPPasswordLen) )
 		goto Exit;
 	else
 		rc = 0;
@@ -430,7 +425,7 @@ int getLookupInfo(FilterContext* context, char *pMatch, unsigned short itemNumbe
          return -1;
    }
 
-   /* Allocate space for the info.  This memory will be freed automatically when the thread terminates. */
+   /* Allocate space for the info. This memory will be freed automatically when the thread terminates. */
    newSpace = (context->AllocMem)(context, ValueLength+1, reserved, &errID);
    *pInfo = (char *) newSpace;
    if (NULL == *pInfo) {
@@ -444,12 +439,12 @@ int getLookupInfo(FilterContext* context, char *pMatch, unsigned short itemNumbe
                             0,      /* Member # of item in text lists */
                             *pInfo, /* buffer to copy result into */
                             MAX_BUF_LEN);   /* Length of buffer */
-   if (!error) {
-      *pInfoLen = strlen(*pInfo)+1;
-      return 0;
+   if (error) {
+	   return -1;
    }
 
-   return -1;
+    *pInfoLen = strlen(*pInfo)+1;
+    return NOERROR;
 }
 
 void logMessage(int flag, const char *message) {
@@ -463,7 +458,7 @@ void logMessage(int flag, const char *message) {
 **************************************************************************/
 void PrintAPIError(STATUS api_error) {
     STATUS  string_id = ERR(api_error);
-    char    error_text[200];
+    char    error_text[201];  // Increased buffer size to accommodate null terminator
     WORD    text_len;
 
     /* Initialize error_text buffer */
