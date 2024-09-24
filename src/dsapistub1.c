@@ -1,7 +1,7 @@
 #include "dsapistub1.h"
 
 /* Routines with syntax dictated by the DSAPI interface */
-unsigned int	Authenticate(FilterContext* context, FilterAuthenticate* authData);
+unsigned int	Authenticate(FilterContext*, FilterAuthenticate*);
 /* Retrieval of name and HTTPPassword from Notes name and address book */
 int getUserNames(FilterContext* context,
                   char *userName,
@@ -16,10 +16,11 @@ void logMessage(int flag, const char *message);
 /* check if mfa.nsf exists */
 int loadMFA();
 
-/* Retrieval of name and HTTPPassword from Notes name and address book */
-int getUserMFA(char *userName);
+/* Find document by key */
+STATUS findNoteByUsername(const char*, NOTEHANDLE*);
 
-STATUS LNPUBLIC getUserPasswordSecret(void far *db_handle, SEARCH_MATCH far *pSearchMatch, ITEM_TABLE far *summary_info);
+/* Read value from document */
+STATUS getFieldValue(NOTEHANDLE hNote, const char* fieldName, char* fieldValue, WORD maxFieldLength);
 
 int getLookupInfo(FilterContext* context,
                   char *pMatch,
@@ -27,14 +28,12 @@ int getLookupInfo(FilterContext* context,
                   char **pInfo,
                   int  *pInfoLen);
 
-void			PrintAPIError (STATUS api_error);
+void PrintAPIError(STATUS);
 
 const char*	filter_name = "MFA for Domino (Traveler)";			// filter name
 const char*	db_mfa_filename = "mfa.nsf";
-char passwordSecret[128] = {0};
-int passwordSecretLen = 0;
-char enable[8] = {0};
-int enableLen = 0;
+
+static DBHANDLE hDB = NULLHANDLE;
 
 int	bLog=FALSE;						// print debug information to console
 
@@ -53,7 +52,7 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 	bLog = OSGetEnvironmentLong("mfa_debug");
 
 	logMessage(TRUE, "--------------------------------");
-	logMessage(TRUE, "DSAPI Filter loaded (v1.0.5)");
+	logMessage(TRUE, "DSAPI Filter loaded (v1.0.6)");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
 	AddInLogMessageText("%s: db: %s", NOERROR, filter_name, db_mfa_filename);
 	AddInLogMessageText("%s: debug: %u", NOERROR, filter_name, bLog);
@@ -71,6 +70,11 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 }	// end FilterInit
 
 EXPORT unsigned int TerminateFilter(unsigned int reserved) {
+	if (hDB != NULLHANDLE) {
+		NSFDbClose(hDB);
+		hDB = NULLHANDLE; // Reset handle
+	}
+
 	logMessage(TRUE, "TerminateFilter");
 	return kFilterHandledEvent;
 }	// end Terminate
@@ -97,10 +101,9 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 	int httpPasswordLen = 0;
 	char *user = NULL;
 	char password[128] = {0};
-	*passwordSecret = NULL;
-	passwordSecretLen = 0;
-	*enable = NULL;
-	enableLen = 0;
+	NOTEHANDLE hNote;
+	char passwordSecret[MAX_BUF_LEN];
+	char mfa[MAX_BUF_LEN];
 
 	logMessage(bLog, "Authenticate started");
 
@@ -131,23 +134,31 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 		return kFilterNotHandled;
 	}
 
-	strncpy(password, (char *)authData->password, sizeof(password) - 1);
-	password[sizeof(password) - 1] = '\0';  // Ensure null-termination
-
-	if (NOERROR != getUserMFA(fullName)) {
+	// Find the note for the username
+	if ((NOERROR != findNoteByUsername(fullName, &hNote))) {
 		logMessage(bLog, "User not found in the mfa.nsf\n");
 		return kFilterNotHandled;
 	}
 
-	if (enableLen == 0) {
-		logMessage(bLog, "User has not enabled multi-factor auth.\n");
+	// Fetching "PasswordSecret" field
+    if (NOERROR != getFieldValue(hNote, "PasswordSecret", passwordSecret, MAX_BUF_LEN)) {
+		logMessage(bLog, "mfa: password secret missing.\n");
 		return kFilterNotHandled;
+    }
+
+    // Fetching "MFA" field
+    if (NOERROR != getFieldValue(hNote, "MFA", mfa, MAX_BUF_LEN)) {
+		logMessage(bLog, "mfa: user not enabled multi-factor auth.\n");
+		return kFilterNotHandled;
+    }
+
+	if (bLog) {
+		AddInLogMessageText("mfa: %s", NOERROR, mfa);
 	}
 
-	logMessage(bLog, "Multi-factor auth. - enabled");
-	if (passwordSecretLen > 0) {
-		strncat(password, passwordSecret, sizeof(password) - strlen(password) - 1);
-	}		
+	strncpy(password, (char *)authData->password, sizeof(password) - 1);
+	password[sizeof(password) - 1] = '\0';  // Ensure null-termination
+	strncat(password, passwordSecret, sizeof(password) - strlen(password) - 1);
 
 	if (bLog) {
 		AddInLogMessageText("Password: %s", NOERROR, password);
@@ -168,125 +179,110 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 }
 
 int loadMFA() {
-/*
- * Description:  Check if MFA.nsf can be opened
- *
- * Return: -1 on error, 0 on success
- */
+    STATUS	error = NOERROR;
 
-	DBHANDLE	db_handle = NULLHANDLE; 
-    STATUS		error = NOERROR;
-
-	// Open MFA database
-    if (error = NSFDbOpen(db_mfa_filename, &db_handle)) {
+    if (error = NSFDbOpen(db_mfa_filename, &hDB) != NOERROR) {
 		PrintAPIError(error);
 		return -1;
 	}
 
-	// Close the db
-    if (error = NSFDbClose(db_handle)) {
-        PrintAPIError(error);
-        return -1;
-    } 
-
 	return NOERROR;
 }
 
-int getUserMFA(char *userName) {
-/*
- * Description:  Lookup the user in MFA.nsf and return the user's secret and MFA status
- *
- * Input:  userName           the name of the user to lookup
- *
- * Return: -1 on error, 0 on success
- */
-    STATUS error = NOERROR;
-    DBHANDLE db_handle = NULLHANDLE;
-    FORMULAHANDLE formula_handle = NULLHANDLE;
-	char formula[256] = {0}; 
-    WORD wdc = 0;
-	int rc = NOERROR;
+// Function to get a field value by field name from a note
+STATUS getFieldValue(NOTEHANDLE hNote, const char* fieldName, char* fieldValue, WORD maxFieldLength) {
+    WORD field_found;
+    WORD textLength;
 
-	sprintf(formula, "UserName=\"%s\"", userName);
+    // Check if the field is present in the note
+    field_found = NSFItemIsPresent(hNote, fieldName, (WORD)strlen(fieldName));
 
-	//Open MFA database
-    if (error = NSFDbOpen(db_mfa_filename, &db_handle)) {
-		PrintAPIError(error);
-		rc = -1;
-		goto Cleanup;
-	}
-    
-    //Create a selection formula to read just the configuration document
-    if (error = NSFFormulaCompile(NULL, (WORD) 0, formula, 
-									(WORD) strlen(formula), &formula_handle,
-									&wdc, &wdc, &wdc, &wdc, &wdc, &wdc)) {
-		NSFDbClose(db_handle);
-        PrintAPIError(error);  
-		rc = -1;
-		goto Cleanup;
+    if (field_found) {
+        // If present, get the text value of the field
+        textLength = NSFItemGetText(hNote, fieldName, fieldValue, maxFieldLength);
+        if (textLength == 0) {
+            return ERR_NOT_FOUND;
+        } else {
+            return NOERROR;
+        }
+    } else {
+        // Field not found
+        return ERR_NOT_FOUND;
     }
-
-	//Perform the search...
-    if (error = NSFSearch(db_handle, formula_handle, NULL, 0, NOTE_CLASS_DOCUMENT, NULL, getUserPasswordSecret, &db_handle, NULL)) {
-		NSFDbClose(db_handle);
-        PrintAPIError(error);
-		rc = -1;
-		goto Cleanup;
-    }
-
-	// Close the db
-    if (error = NSFDbClose(db_handle)) {
-        PrintAPIError(error);
-		rc = -1;
-		goto Cleanup;
-    } 
-
-Cleanup:
-    if (formula_handle != NULLHANDLE) {
-        OSMemFree(formula_handle);
-    }
-
-	return rc;
 }
 
-STATUS LNPUBLIC getUserPasswordSecret(void far *db_handle, SEARCH_MATCH far *pSearchMatch, ITEM_TABLE far *summary_info) {
-    SEARCH_MATCH	SearchMatch;
-	NOTEHANDLE		note_handle = NULLHANDLE;  // Initialize note_handle
-    STATUS			error = NOERROR;
-	BOOL			field_found;
+// Function to find a note by username and return its NOTEHANDLE
+STATUS findNoteByUsername(const char* username, NOTEHANDLE* pNoteHandle) {
+    STATUS error;
+    NOTEID viewID;
+    NOTEID noteID;
+	HCOLLECTION hCollection;
+    COLLECTIONPOSITION pos;
+    DWORD numMatches;
+    DHANDLE rethBuffer;
+    WORD bufferLength;
+    DWORD numEntriesReturned;
+    DWORD numEntriesSkipped;
+    WORD signalFlags;
+    NOTEID* pNoteID;
 
-    memcpy( (char*)&SearchMatch, (char*)pSearchMatch, sizeof(SEARCH_MATCH) );
+    // Open the view by its name (e.g., $users)
+    if ((error = NIFFindView(hDB, "($users)", &viewID)) != NOERROR) {
+        printf("Error finding view: %d\n", error);
+        return error;
+    }
 
-	/* Open the note. */
-    if (error = NSFNoteOpen(
-                *(DBHANDLE far *)db_handle,		/* database handle */
-                SearchMatch.ID.NoteID,			/* note ID */
-                0,								/* open flags */
-                &note_handle)					/* note handle (return) */
-				) {
+    // Open the collection (view)
+    if ((error = NIFOpenCollection(hDB, hDB, viewID, 0, NULLHANDLE, &hCollection, NULL, NULL, NULL, NULL)) != NOERROR) {
+        printf("Error opening collection: %d\n", error);
+        return error;
+    }
 
-		return ERR(error);
-	}
+    // Find the document(s) by the username
+    if ((error = NIFFindByName(hCollection, username, FIND_CASE_INSENSITIVE, &pos, &numMatches)) != NOERROR) {
+        printf("Error finding name in collection: %d\n", error);
+        NIFCloseCollection(hCollection);
+        return error;
+    }
 
-	/*  Look for the "PasswordSecret" field within this note. */
-    field_found = NSFItemIsPresent(note_handle, ITEM_NAME_PASSWORD_SECRET, (WORD) strlen (ITEM_NAME_PASSWORD_SECRET));
-	if(field_found) {
-		passwordSecretLen = NSFItemGetText(note_handle, ITEM_NAME_PASSWORD_SECRET, passwordSecret, (WORD) sizeof (passwordSecret));
-	}
+    if (numMatches == 0) {
+        printf("No matching document found for username: %s\n", username);
+        NIFCloseCollection(hCollection);
+        return ERR_NOT_FOUND;
+    }
 
-	/*  Look for the "MFA" field within this note. */
-    field_found = NSFItemIsPresent( note_handle, ITEM_NAME_MFA, (WORD) strlen (ITEM_NAME_MFA));
-	if(field_found) {
-		enableLen = NSFItemGetText(note_handle, ITEM_NAME_MFA, enable, (WORD) sizeof (enable));
-	}
+    // Read the first entry's NOTEID from the collection
+    if ((error = NIFReadEntries(hCollection, &pos, NAVIGATE_CURRENT, 0, NAVIGATE_NEXT, 1, READ_MASK_NOTEID, &rethBuffer, &bufferLength, &numEntriesSkipped, &numEntriesReturned, &signalFlags)) != NOERROR) {
+        printf("Error reading entries from collection: %d\n", error);
+        NIFCloseCollection(hCollection);
+        return error;
+    }
 
-	/* Close the note. */
-	if (error = NSFNoteClose(note_handle)) {
-        return ERR(error);
-	}
+	    // Check if we have entries returned
+    if (numEntriesReturned == 0) {
+        printf("No entries returned for username: %s\n", username);
+        OSMemFree(rethBuffer);  // Free the buffer
+        NIFCloseCollection(hCollection);
+        return ERR_NOT_FOUND;
+    }
 
-	/* End of subroutine. */
-	return NOERROR;
+    // Lock the buffer to access the NOTEID
+    pNoteID = (NOTEID*)OSLockObject(rethBuffer);
+    noteID = *pNoteID;  // Store the first entry's NOTEID
+    OSUnlockObject(rethBuffer);
+    OSMemFree(rethBuffer);  // Free the buffer
+
+    // Close the collection, we don't need it anymore
+    NIFCloseCollection(hCollection);
+
+    // Now open the note by its NOTEID
+    if ((error = NSFNoteOpen(hDB, noteID, 0, pNoteHandle)) != NOERROR) {
+        printf("Error opening note: %d\n", error);
+        return error;
+    }
+
+    // Successfully opened the note, return its handle
+    return NOERROR;
 }
 
 int getUserNames(FilterContext* context, char *userName, char **pUserFullName, int  *pUserFullNameLen, char **pHTTPPassword, int  *pHTTPPasswordLen) {

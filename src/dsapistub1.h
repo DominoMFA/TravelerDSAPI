@@ -13,10 +13,12 @@
     #pragma warning Unknown dynamic link import/export semantics.
 #endif
 
+#define ERR_NOT_FOUND 0x0214
+
 #define MAX_BUF_LEN 512
 
-#define     ITEM_NAME_PASSWORD_SECRET	"PasswordSecret"
-#define     ITEM_NAME_MFA				"MFA"
+#define	ITEM_NAME_PASSWORD_SECRET	"PasswordSecret"
+#define	ITEM_NAME_MFA	"MFA"
 
 // Constants for log level
 #ifndef CRITICAL_MSG
@@ -29,12 +31,10 @@
 #endif
 
 #include <stdio.h>
-
 #include <global.h>
 #include <addin.h>
 #include <dsapi.h>
 #include <nsfdb.h>
-#include <nsfsearc.h>
 #include <osmem.h>
 #include <osmisc.h>
 #include <lookup.h>
