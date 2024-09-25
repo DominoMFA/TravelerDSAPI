@@ -17,7 +17,7 @@ void logMessage(int flag, const char *message);
 int loadMFA();
 
 /* Find document by key */
-STATUS findNoteByUsername(const char*, NOTEHANDLE*);
+STATUS findNoteByUsername(const char*, DBHANDLE, NOTEHANDLE*);
 
 /* Read value from document */
 STATUS getFieldValue(NOTEHANDLE hNote, const char* fieldName, char* fieldValue, WORD maxFieldLength);
@@ -32,8 +32,6 @@ void PrintAPIError(STATUS);
 
 const char*	filter_name = "MFA for Domino (Traveler)";			// filter name
 const char*	db_mfa_filename = "mfa.nsf";
-
-static DBHANDLE hDB = NULLHANDLE;
 
 int	bLog=FALSE;						// print debug information to console
 
@@ -52,7 +50,7 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 	bLog = OSGetEnvironmentLong("mfa_debug");
 
 	logMessage(TRUE, "--------------------------------");
-	logMessage(TRUE, "DSAPI Filter loaded (v1.0.7)");
+	logMessage(TRUE, "DSAPI Filter loaded (v1.0.6)");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
 	AddInLogMessageText("%s: db: %s", NOERROR, filter_name, db_mfa_filename);
 	AddInLogMessageText("%s: debug: %u", NOERROR, filter_name, bLog);
@@ -70,11 +68,6 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 }	// end FilterInit
 
 EXPORT unsigned int TerminateFilter(unsigned int reserved) {
-	if (hDB != NULLHANDLE) {
-		NSFDbClose(hDB);
-		hDB = NULLHANDLE; // Reset handle
-	}
-
 	logMessage(TRUE, "TerminateFilter");
 	return kFilterHandledEvent;
 }	// end Terminate
@@ -95,6 +88,7 @@ EXPORT unsigned int HttpFilterProc(FilterContext* context, unsigned int eventTyp
 *      handle user authentication
 */
 unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) {
+	DBHANDLE hDB = NULLHANDLE; 
 	char *fullName = NULL;
 	int fullNameLen = 0;
 	char *httpPassword = NULL;
@@ -134,8 +128,14 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 		return kFilterNotHandled;
 	}
 
+	// Open MFA database
+    if (NOERROR != NSFDbOpen(db_mfa_filename, &hDB)) {
+		logMessage(bLog, "mfa.nsf failed to open\n");
+		return kFilterNotHandled;
+	}
+
 	// Find the note for the username
-	if ((NOERROR != findNoteByUsername(fullName, &hNote))) {
+	if ((NOERROR != findNoteByUsername(fullName, hDB, &hNote))) {
 		logMessage(bLog, "User not found in the mfa.nsf\n");
 		return kFilterNotHandled;
 	}
@@ -151,6 +151,12 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 		logMessage(bLog, "mfa: user not enabled multi-factor auth.\n");
 		return kFilterNotHandled;
     }
+
+	// Close the db
+    if (NOERROR != NSFDbClose(hDB)) {
+		logMessage(bLog, "mfa.nsf failed to close \n");
+        return kFilterNotHandled;
+    } 
 
 	if (bLog) {
 		AddInLogMessageText("mfa: %s", NOERROR, mfa);
@@ -179,12 +185,26 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 }
 
 int loadMFA() {
-    STATUS	error = NOERROR;
+/*
+ * Description:  Check if MFA.nsf can be opened
+ *
+ * Return: -1 on error, 0 on success
+ */
 
-    if (error = NSFDbOpen(db_mfa_filename, &hDB) != NOERROR) {
+	DBHANDLE	hDB = NULLHANDLE; 
+    STATUS		error = NOERROR;
+
+	// Open MFA database
+    if (error = NSFDbOpen(db_mfa_filename, &hDB)) {
 		PrintAPIError(error);
 		return -1;
 	}
+
+	// Close the db
+    if (error = NSFDbClose(hDB)) {
+        PrintAPIError(error);
+        return -1;
+    } 
 
 	return NOERROR;
 }
@@ -212,7 +232,7 @@ STATUS getFieldValue(NOTEHANDLE hNote, const char* fieldName, char* fieldValue, 
 }
 
 // Function to find a note by username and return its NOTEHANDLE
-STATUS findNoteByUsername(const char* username, NOTEHANDLE* pNoteHandle) {
+STATUS findNoteByUsername(const char* username, DBHANDLE hDB, NOTEHANDLE* pNoteHandle) {
     STATUS error;
     NOTEID viewID;
     NOTEID noteID;
