@@ -52,7 +52,7 @@ EXPORT unsigned int FilterInit(FilterInitData* filterInitData) {
 	bLog = OSGetEnvironmentLong("mfa_debug");
 
 	logMessage(TRUE, "--------------------------------");
-	logMessage(TRUE, "DSAPI Filter loaded (v1.0.6)");
+	logMessage(TRUE, "DSAPI Filter loaded (v1.0.7)");
 	AddInLogMessageText("%s: %s %s", NOERROR, filter_name, __TIME__, __DATE__);
 	AddInLogMessageText("%s: db: %s", NOERROR, filter_name, db_mfa_filename);
 	AddInLogMessageText("%s: debug: %u", NOERROR, filter_name, bLog);
@@ -228,39 +228,39 @@ STATUS findNoteByUsername(const char* username, NOTEHANDLE* pNoteHandle) {
 
     // Open the view by its name (e.g., $users)
     if ((error = NIFFindView(hDB, "($users)", &viewID)) != NOERROR) {
-        printf("Error finding view: %d\n", error);
+		logMessage(bLog, "($users) - view not found in mfa.nsf\n");
         return error;
     }
 
     // Open the collection (view)
     if ((error = NIFOpenCollection(hDB, hDB, viewID, 0, NULLHANDLE, &hCollection, NULL, NULL, NULL, NULL)) != NOERROR) {
-        printf("Error opening collection: %d\n", error);
+		logMessage(bLog, "Error opening collection\n");
         return error;
     }
 
     // Find the document(s) by the username
     if ((error = NIFFindByName(hCollection, username, FIND_CASE_INSENSITIVE, &pos, &numMatches)) != NOERROR) {
-        printf("Error finding name in collection: %d\n", error);
+		logMessage(bLog, "Error finding name in collection\n");
         NIFCloseCollection(hCollection);
         return error;
     }
 
     if (numMatches == 0) {
-        printf("No matching document found for username: %s\n", username);
+		logMessage(bLog, "No matching document found for username\n");
         NIFCloseCollection(hCollection);
         return ERR_NOT_FOUND;
     }
 
     // Read the first entry's NOTEID from the collection
     if ((error = NIFReadEntries(hCollection, &pos, NAVIGATE_CURRENT, 0, NAVIGATE_NEXT, 1, READ_MASK_NOTEID, &rethBuffer, &bufferLength, &numEntriesSkipped, &numEntriesReturned, &signalFlags)) != NOERROR) {
-        printf("Error reading entries from collection: %d\n", error);
+		logMessage(bLog, "Error reading entries from collection\n");
         NIFCloseCollection(hCollection);
         return error;
     }
 
-	    // Check if we have entries returned
+	// Check if we have entries returned
     if (numEntriesReturned == 0) {
-        printf("No entries returned for username: %s\n", username);
+		logMessage(bLog, "No entries returned for username\n");
         OSMemFree(rethBuffer);  // Free the buffer
         NIFCloseCollection(hCollection);
         return ERR_NOT_FOUND;
@@ -277,7 +277,7 @@ STATUS findNoteByUsername(const char* username, NOTEHANDLE* pNoteHandle) {
 
     // Now open the note by its NOTEID
     if ((error = NSFNoteOpen(hDB, noteID, 0, pNoteHandle)) != NOERROR) {
-        printf("Error opening note: %d\n", error);
+		logMessage(bLog, "Error opening note\n");
         return error;
     }
 
