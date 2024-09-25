@@ -284,7 +284,7 @@ STATUS findNoteByUsername(const char* username, NOTEHANDLE* pNoteHandle) {
     // Successfully opened the note, return its handle
     return NOERROR;
 }
-
+	
 int getUserNames(FilterContext* context, char *userName, char **pUserFullName, int  *pUserFullNameLen, char **pHTTPPassword, int  *pHTTPPasswordLen) {
 /*
  * Description:  Lookup the user and return the user's full name and
