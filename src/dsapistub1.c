@@ -136,19 +136,22 @@ unsigned int Authenticate(FilterContext* context, FilterAuthenticate* authData) 
 
 	// Find the note for the username
 	if ((NOERROR != findNoteByUsername(fullName, hDB, &hNote))) {
+		NSFDbClose(hDB);
 		logMessage(bLog, "User not found in the mfa.nsf\n");
 		return kFilterNotHandled;
 	}
 
-	// Fetching "PasswordSecret" field
-    if (NOERROR != getFieldValue(hNote, "PasswordSecret", passwordSecret, MAX_BUF_LEN)) {
-		logMessage(bLog, "mfa: password secret missing.\n");
+	    // Fetching "MFA" field
+    if (NOERROR != getFieldValue(hNote, "MFA", mfa, MAX_BUF_LEN)) {
+		NSFDbClose(hDB);
+		logMessage(bLog, "mfa: user not enabled multi-factor auth.\n");
 		return kFilterNotHandled;
     }
 
-    // Fetching "MFA" field
-    if (NOERROR != getFieldValue(hNote, "MFA", mfa, MAX_BUF_LEN)) {
-		logMessage(bLog, "mfa: user not enabled multi-factor auth.\n");
+	// Fetching "PasswordSecret" field
+    if (NOERROR != getFieldValue(hNote, "PasswordSecret", passwordSecret, MAX_BUF_LEN)) {
+		NSFDbClose(hDB);
+		logMessage(bLog, "mfa: password secret missing.\n");
 		return kFilterNotHandled;
     }
 
